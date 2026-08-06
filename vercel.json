@@ -1,14 +1,3 @@
 {
-  "framework": "nextjs",
-  "buildCommand": "npx --yes copy-webpack-plugin && next build",
-  "headers": [
-    {
-      "source": "/cesium/(.*)",
-      "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "*" },
-        { "key": "Access-Control-Allow-Methods", "value": "GET, OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "*" }
-      ]
-    }
-  ]
+  "framework": "nextjs"
 }
