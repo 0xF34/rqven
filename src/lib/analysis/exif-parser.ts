@@ -21,11 +21,11 @@ export interface ParsedEXIF {
 export async function parseEXIF(buffer: ArrayBuffer): Promise<ParsedEXIF | null> {
   try {
     const exif = await exifr.parse(buffer, {
-      gps: true,
-      tiff: true,
-      exif: true,
-      ifd0: true,
-    });
+    gps: true,
+    tiff: true,
+    exif: true,
+    ifd0: {},
+  });
 
     if (!exif) return null;
 
