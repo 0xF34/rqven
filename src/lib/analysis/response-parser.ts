@@ -1,4 +1,16 @@
-import type { InvestigationResult, Evidence, CandidateLocation, LandmarkDetection, ArchitectureAnalysis, VegetationAnalysis, WeatherAnalysis, MathematicalAnalysis, OCRResult, ConfidenceScore, LocationEstimate } from '@/types/analysis';
+import type {
+  InvestigationResult,
+  Evidence,
+  CandidateLocation,
+  LandmarkDetection,
+  ArchitectureAnalysis,
+  VegetationAnalysis,
+  WeatherAnalysis,
+  MathematicalAnalysis,
+  OCRResult,
+  ConfidenceScore,
+  LocationEstimate,
+} from '@/types/analysis';
 
 interface RawAnalysis {
   exif_note?: string | null;
@@ -19,13 +31,13 @@ interface RawAnalysis {
     style: string;
     likely_region: string;
     features?: string[];
-    era?: string;
+    era?: string | null;
     materials?: string[];
   };
   vegetation?: {
     types?: string[];
     density?: string;
-    season?: string;
+    season?: string | null;
     climate_hint?: string;
   };
   weather?: {
@@ -34,11 +46,11 @@ interface RawAnalysis {
     estimated_season?: string;
   };
   mathematical?: {
-    estimated_building_height_m?: { value: number; method: string };
-    estimated_road_width_m?: { value: number; method: string };
-    sun_angle_degrees?: { value: number; method: string };
-    shadow_direction?: { value: number; method: string } | number;
-    estimated_camera_height_m?: { value: number; method: string };
+    estimated_building_height_m?: { value: number; method: string } | null;
+    estimated_road_width_m?: { value: number; method: string } | null;
+    sun_angle_degrees?: { value: number; method: string } | null;
+    shadow_direction?: { value: number; method: string } | number | null;
+    estimated_camera_height_m?: { value: number; method: string } | null;
   };
   location_estimate?: {
     country: string;
@@ -61,6 +73,7 @@ interface RawAnalysis {
     country: string;
     region: string;
     city: string;
+    neighborhood?: string | null;
     confidence: number;
     reasons?: string[];
   }>;
@@ -75,13 +88,21 @@ interface RawAnalysis {
   cultural_indicators?: string[];
 }
 
-export function parseAIResponse(raw: RawAnalysis, exifData: Record<string, unknown> | null): InvestigationResult {
+export function parseAIResponse(
+  raw: RawAnalysis,
+  exifData: Record<string, unknown> | null
+): InvestigationResult {
   const confidence: ConfidenceScore = raw.confidence || {
     country: 0.5, region: 0.3, city: 0.2, neighborhood: 0.1, coordinates: 0.15,
   };
 
-  const estimate: LocationEstimate = raw.location_estimate || {
-    country: 'Unknown', region: 'Unknown', city: 'Unknown', latitude: 0, longitude: 0,
+  const estimate: LocationEstimate = {
+    country: raw.location_estimate?.country || 'Unknown',
+    region: raw.location_estimate?.region || 'Unknown',
+    city: raw.location_estimate?.city || 'Unknown',
+    neighborhood: raw.location_estimate?.neighborhood ?? undefined,
+    latitude: raw.location_estimate?.latitude || 0,
+    longitude: raw.location_estimate?.longitude || 0,
   };
 
   const ocr: OCRResult | null = raw.ocr ? {
@@ -96,56 +117,83 @@ export function parseAIResponse(raw: RawAnalysis, exifData: Record<string, unkno
   } : null;
 
   const landmarks: LandmarkDetection[] = (raw.landmarks || []).map((l) => ({
-    name: l.name, confidence: l.confidence, type: l.type as LandmarkDetection['type'], description: l.description,
+    name: l.name,
+    confidence: l.confidence,
+    type: (l.type === 'natural' || l.type === 'building' || l.type === 'monument' || l.type === 'bridge' || l.type === 'infrastructure' || l.type === 'brand')
+      ? l.type
+      : 'building',
+    description: l.description,
   }));
 
   const architecture: ArchitectureAnalysis | null = raw.architecture ? {
-    style: raw.architecture.style, region: raw.architecture.likely_region,
-    features: raw.architecture.features || [], era: raw.architecture.era, materials: raw.architecture.materials || [],
+    style: raw.architecture.style,
+    region: raw.architecture.likely_region,
+    features: raw.architecture.features || [],
+    era: raw.architecture.era ?? undefined,
+    materials: raw.architecture.materials || [],
   } : null;
 
   const vegetation: VegetationAnalysis | null = raw.vegetation ? {
-    types: raw.vegetation.types || [], density: (raw.vegetation.density as VegetationAnalysis['density']) || 'moderate',
-    season: raw.vegetation.season, health: raw.vegetation.density === 'tropical' ? 'lush' : 'normal',
+    types: raw.vegetation.types || [],
+    density: ['sparse', 'moderate', 'dense', 'tropical'].includes(raw.vegetation.density || '')
+      ? raw.vegetation.density as VegetationAnalysis['density']
+      : 'moderate',
+    season: raw.vegetation.season ?? undefined,
+    health: raw.vegetation.density === 'tropical' ? 'lush' : 'normal',
   } : null;
 
   const weather: WeatherAnalysis | null = raw.weather ? {
-    condition: (raw.weather.condition as WeatherAnalysis['condition']) || 'clear',
+    condition: ['clear', 'cloudy', 'overcast', 'rainy', 'foggy', 'snowy'].includes(raw.weather.condition)
+      ? raw.weather.condition as WeatherAnalysis['condition']
+      : 'clear',
   } : null;
 
-  const math = raw.mathematical;
-  const mathematical: MathematicalAnalysis | null = math ? {
-    estimatedBuildingHeight: math.estimated_building_height_m
-      ? { value: math.estimated_building_height_m.value, unit: 'm', method: math.estimated_building_height_m.method }
+  const m = raw.mathematical;
+  const mathematical: MathematicalAnalysis | null = m ? {
+    estimatedBuildingHeight: m.estimated_building_height_m ? { value: m.estimated_building_height_m.value, unit: 'm', method: m.estimated_building_height_m.method } : undefined,
+    estimatedRoadWidth: m.estimated_road_width_m ? { value: m.estimated_road_width_m.value, unit: 'm', method: m.estimated_road_width_m.method } : undefined,
+    sunAngle: m.sun_angle_degrees ? { value: m.sun_angle_degrees.value, unit: 'deg', method: m.sun_angle_degrees.method } : undefined,
+    shadowDirection: m.shadow_direction
+      ? { value: typeof m.shadow_direction === 'object' && m.shadow_direction !== null ? m.shadow_direction.value : m.shadow_direction, unit: 'deg', method: typeof m.shadow_direction === 'object' && m.shadow_direction !== null ? (m.shadow_direction.method || 'estimated') : 'estimated' }
       : undefined,
-    estimatedRoadWidth: math.estimated_road_width_m
-      ? { value: math.estimated_road_width_m.value, unit: 'm', method: math.estimated_road_width_m.method }
-      : undefined,
-    sunAngle: math.sun_angle_degrees
-      ? { value: math.sun_angle_degrees.value, unit: 'deg', method: math.sun_angle_degrees.method }
-      : undefined,
-    shadowDirection: math.shadow_direction
-      ? { value: typeof math.shadow_direction === 'object' ? math.shadow_direction.value : math.shadow_direction, unit: 'deg', method: typeof math.shadow_direction === 'object' ? (math.shadow_direction.method || 'estimated') : 'estimated' }
-      : undefined,
-    cameraElevation: math.estimated_camera_height_m
-      ? { value: math.estimated_camera_height_m.value, unit: 'm', method: math.estimated_camera_height_m.method }
-      : undefined,
+    cameraElevation: m.estimated_camera_height_m ? { value: m.estimated_camera_height_m.value, unit: 'm', method: m.estimated_camera_height_m.method } : undefined,
   } : null;
 
   const candidates: CandidateLocation[] = (raw.candidates || []).map((c) => ({
-    latitude: c.latitude, longitude: c.longitude, country: c.country, region: c.region,
-    city: c.city, confidence: c.confidence, reasons: c.reasons || [],
+    latitude: c.latitude,
+    longitude: c.longitude,
+    country: c.country,
+    region: c.region,
+    city: c.city,
+    neighborhood: c.neighborhood ?? undefined,
+    confidence: c.confidence,
+    reasons: c.reasons || [],
   }));
 
   const evidence: Evidence[] = (raw.evidence || []).map((e, i) => ({
-    id: `evidence-${i}`, category: e.category as Evidence['category'],
-    description: e.description, influence: e.influence as Evidence['influence'], detail: e.detail,
+    id: `evidence-${i}`,
+    category: (['exif', 'ocr', 'landmark', 'architecture', 'vegetation', 'weather', 'mathematical', 'cultural'].includes(e.category)
+      ? e.category
+      : 'cultural') as Evidence['category'],
+    description: e.description,
+    influence: (['strong', 'moderate', 'weak'].includes(e.influence)
+      ? e.influence
+      : 'weak') as Evidence['influence'],
+    detail: e.detail,
   }));
 
   return {
     exif: exifData as InvestigationResult['exif'],
-    ocr, landmarks, architecture, vegetation, weather, mathematical,
-    confidence, estimate, candidates, evidence,
+    ocr,
+    landmarks,
+    architecture,
+    vegetation,
+    weather,
+    mathematical,
+    confidence,
+    estimate,
+    candidates,
+    evidence,
     reasoning: raw.reasoning || '',
     detectedLanguage: raw.detected_language,
     timeOfDay: raw.weather?.time_of_day,
@@ -154,14 +202,8 @@ export function parseAIResponse(raw: RawAnalysis, exifData: Record<string, unkno
 }
 
 export function extractJSON(text: string): unknown {
-  // Try clean parse first
   try { return JSON.parse(text); } catch {}
-
-  // Try to find JSON in the response
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    try { return JSON.parse(jsonMatch[0]); } catch {}
-  }
-
+  const m = text.match(/\{[\s\S]*\}/);
+  if (m) { try { return JSON.parse(m[0]); } catch {} }
   return null;
 }
