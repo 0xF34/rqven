@@ -129,12 +129,13 @@ export async function POST(req: NextRequest) {
     // Extract EXIF data
     let exifData: Record<string, unknown> | null = null;
     try {
-      const exif = await exifr.parse(buffer, {
-        gps: true,
-        tiff: true,
-        exif: true,
-        ifd0: true,
-      });
+      // NEW
+const exif = await exifr.parse(buffer, {
+  gps: true,
+  tiff: true,
+  exif: true,
+  ifd0: {},
+});
       if (exif) {
         exifData = {
           ...(exif.latitude && exif.longitude
