@@ -5,8 +5,8 @@ import * as Cesium from 'cesium';
 import { useInvestigationStore } from '@/store/investigation';
 import type { CandidateLocation } from '@/types/analysis';
 
-// Suppress Cesium's built-in asset loading warnings
-window.CESIUM_BASE_URL = process.env.NEXT_PUBLIC_CESIUM_BASE_URL || '/cesium';
+// Use Cesium CDN — no local assets needed in public/cesium
+window.CESIUM_BASE_URL = 'https://cesium.com/downloads/cesiumjs/releases/1.124/Build/Cesium/';
 
 interface CesiumGlobeProps {
   onReady?: () => void;
@@ -19,7 +19,6 @@ export default function CesiumGlobe({ onReady }: CesiumGlobeProps) {
   const { result, selectedCandidate, cameraFlying, setCameraFlying, setShowResults } =
     useInvestigationStore();
 
-  // Initialize Cesium viewer with dark globe theme
   const initViewer = useCallback(() => {
     if (!containerRef.current || viewerRef.current) return;
 
@@ -55,34 +54,41 @@ export default function CesiumGlobe({ onReady }: CesiumGlobeProps) {
       creditContainer: document.createElement('div'),
     });
 
-    // Dark globe setup - black oceans, dark continents
     const scene = viewer.scene;
     scene.backgroundColor = Cesium.Color.BLACK;
-    scene.globe.baseColor = Cesium.Color.fromCssColorString('#0a0a0a');
+    scene.globe.baseColor = Cesium.Color.fromCssColorString('#080808');
     scene.globe.showGroundAtmosphere = true;
     scene.globe.enableLighting = true;
     scene.fog.enabled = true;
-    scene.fog.density = 0.0002;
+    scene.fog.density = 0.0003;
 
-    // Stars background
-    scene.skyBox = new Cesium.SkyBox({
-      sources: {
-        positiveX: `${window.CESIUM_BASE_URL}/SkyBox/tycho2t3_80_px.jpg`,
-        negativeX: `${window.CESIUM_BASE_URL}/SkyBox/tycho2t3_80_mx.jpg`,
-        positiveY: `${window.CESIUM_BASE_URL}/SkyBox/tycho2t3_80_py.jpg`,
-        negativeY: `${window.CESIUM_BASE_URL}/SkyBox/tycho2t3_80_my.jpg`,
-        positiveZ: `${window.CESIUM_BASE_URL}/SkyBox/tycho2t3_80_pz.jpg`,
-        negativeZ: `${window.CESIUM_BASE_URL}/SkyBox/tycho2t3_80_mz.jpg`,
-      },
-    });
+    // Sun & Moon for realistic lighting
+    scene.sun = new Cesium.Sun();
+    scene.moon = new Cesium.Moon();
 
-    // Add subtle atmosphere glow
+    // Stars skybox from CDN
+    try {
+      scene.skyBox = new Cesium.SkyBox({
+        sources: {
+          positiveX: 'https://cesium.com/downloads/cesiumjs/releases/1.124/Build/Cesium/SkyBox/tycho2t3_80_px.jpg',
+          negativeX: 'https://cesium.com/downloads/cesiumjs/releases/1.124/Build/Cesium/SkyBox/tycho2t3_80_mx.jpg',
+          positiveY: 'https://cesium.com/downloads/cesiumjs/releases/1.124/Build/Cesium/SkyBox/tycho2t3_80_py.jpg',
+          negativeY: 'https://cesium.com/downloads/cesiumjs/releases/1.124/Build/Cesium/SkyBox/tycho2t3_80_my.jpg',
+          positiveZ: 'https://cesium.com/downloads/cesiumjs/releases/1.124/Build/Cesium/SkyBox/tycho2t3_80_pz.jpg',
+          negativeZ: 'https://cesium.com/downloads/cesiumjs/releases/1.124/Build/Cesium/SkyBox/tycho2t3_80_mz.jpg',
+        },
+      });
+    } catch {
+      // Fallback: pure black space
+    }
+
+    // Dim atmosphere
     scene.skyAtmosphere = new Cesium.SkyAtmosphere();
     scene.skyAtmosphere.hueShift = -0.05;
-    scene.skyAtmosphere.saturationShift = -0.2;
+    scene.skyAtmosphere.saturationShift = -0.3;
     scene.skyAtmosphere.brightnessShift = -0.4;
 
-    // Dark imagery layer for the globe
+    // Dark tile layer (CartoDB Dark Matter — free, no token)
     const darkImagery = new Cesium.UrlTemplateImageryProvider({
       url: 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
       credit: '',
@@ -96,15 +102,14 @@ export default function CesiumGlobe({ onReady }: CesiumGlobeProps) {
       }
     });
 
-    // Set initial camera position - zoomed out view of Earth
-    viewer.camera.flyTo({
+    // Start zoomed out
+    viewer.camera.setView({
       destination: Cesium.Cartesian3.fromDegrees(0, 20, 25000000),
       orientation: {
         heading: Cesium.Math.toRadians(0),
         pitch: Cesium.Math.toRadians(-90),
         roll: 0,
       },
-      duration: 0,
     });
 
     viewerRef.current = viewer;
@@ -122,7 +127,7 @@ export default function CesiumGlobe({ onReady }: CesiumGlobeProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Fly to estimated location
+  // Fly to estimated location when results arrive
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || !result) return;
@@ -132,58 +137,56 @@ export default function CesiumGlobe({ onReady }: CesiumGlobeProps) {
       longitude: result.estimate.longitude,
     };
 
+    // Skip if no real coordinates
     if (target.latitude === 0 && target.longitude === 0) return;
 
     setCameraFlying(true);
 
-    // Clear previous markers
+    // Clear old markers
     entitiesRef.current.forEach((e) => viewer.entities.remove(e));
     entitiesRef.current = [];
 
-    // Add high-res satellite imagery layer (Bing Maps)
+    // Fade in satellite imagery during flight
+    let satelliteLayer: Cesium.ImageryLayer | null = null;
+
     try {
-      const satelliteLayer = viewer.imageryLayers.addImageryProvider(
-        new Cesium.IonImageryProvider({ assetId: 2 })
-      );
+      const provider = new Cesium.IonImageryProvider({ assetId: 2 });
+      satelliteLayer = viewer.imageryLayers.addImageryProvider(provider);
       satelliteLayer.alpha = 0;
-
-      // Animate satellite fade-in during flight
-      const startTime = Cesium.JulianDate.now();
-      const preUpdateListener = (clock: Cesium.Clock) => {
-        const elapsed = Cesium.JulianDate.secondsDifference(
-          Cesium.JulianDate.now(),
-          startTime
-        );
-        if (elapsed < 5) {
-          satelliteLayer.alpha = Math.min(1, elapsed / 4);
-        }
-      };
-      viewer.clock.onTick.addEventListener(preUpdateListener);
-
-      // Clean up listener after flight
-      setTimeout(() => {
-        viewer.clock.onTick.removeEventListener(preUpdateListener);
-      }, 6000);
     } catch {
-      // If Ion imagery fails, try OpenStreetMap satellite
+      // Fallback: ArcGIS World Imagery (free)
       try {
-        const osmSatellite = new Cesium.UrlTemplateImageryProvider({
+        const arcgis = new Cesium.UrlTemplateImageryProvider({
           url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
           credit: '',
         });
-        viewer.imageryLayers.addImageryProvider(osmSatellite);
+        satelliteLayer = viewer.imageryLayers.addImageryProvider(arcgis);
+        satelliteLayer.alpha = 0;
       } catch {
-        // Continue with dark imagery if all satellite sources fail
+        // Both failed — dark tiles only
       }
+    }
+
+    // Smoothly fade satellite layer in during flight
+    if (satelliteLayer) {
+      const fadeStart = Date.now();
+      const fadeDuration = 4500;
+      const fadeListener = () => {
+        const elapsed = Date.now() - fadeStart;
+        if (elapsed < fadeDuration) {
+          satelliteLayer!.alpha = Math.min(1, elapsed / fadeDuration);
+        }
+      };
+      viewer.clock.onTick.addEventListener(fadeListener);
+      setTimeout(() => {
+        viewer.clock.onTick.removeEventListener(fadeListener);
+        if (satelliteLayer) satelliteLayer.alpha = 1;
+      }, fadeDuration + 500);
     }
 
     // Cinematic camera flight
     viewer.camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(
-        target.longitude,
-        target.latitude,
-        2000
-      ),
+      destination: Cesium.Cartesian3.fromDegrees(target.longitude, target.latitude, 2000),
       orientation: {
         heading: Cesium.Math.toRadians(0),
         pitch: Cesium.Math.toRadians(-45),
@@ -191,15 +194,16 @@ export default function CesiumGlobe({ onReady }: CesiumGlobeProps) {
       },
       duration: 6,
       complete: () => {
-        // Add investigation marker
+        // --- Primary investigation marker ---
         const marker = viewer.entities.add({
-          position: Cesium.Cartesian3.fromDegrees(target.latitude, target.longitude),
+          position: Cesium.Cartesian3.fromDegrees(target.longitude, target.latitude),
           point: {
-            pixelSize: 12,
+            pixelSize: 14,
             color: Cesium.Color.fromCssColorString('#10b981'),
             outlineColor: Cesium.Color.WHITE,
             outlineWidth: 2,
             heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
           label: {
             text: 'INVESTIGATION TARGET',
@@ -209,56 +213,69 @@ export default function CesiumGlobe({ onReady }: CesiumGlobeProps) {
             outlineWidth: 2,
             outlineColor: Cesium.Color.BLACK,
             verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-            pixelOffset: new Cesium.Cartesian2(0, -20),
+            pixelOffset: new Cesium.Cartesian2(0, -22),
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
         });
         entitiesRef.current.push(marker);
 
-        // Add confidence radius circle
-        const confidenceRadius =
-          result.confidence.coordinates > 0.7
-            ? 500
-          : result.confidence.coordinates > 0.4
-            ? 2000
-            : 5000;
-
-        const radiusEntity = viewer.entities.add({
-          position: Cesium.Cartesian3.fromDegrees(
-            target.longitude,
-            target.latitude
-          ),
+        // --- Small pulsing ring at target ---
+        const ring = viewer.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(target.longitude, target.latitude),
           ellipse: {
-            semiMajorAxis: confidenceRadius,
-            semiMinorAxis: confidenceRadius,
-            material: Cesium.Color.fromCssColorString('#10b981').withAlpha(0.15),
+            semiMajorAxis: 150,
+            semiMinorAxis: 150,
+            material: Cesium.Color.fromCssColorString('#10b981').withAlpha(0.0),
             outline: true,
-            outlineColor: Cesium.Color.fromCssColorString('#10b981').withAlpha(0.5),
+            outlineColor: Cesium.Color.fromCssColorString('#10b981').withAlpha(0.6),
+            outlineWidth: 2,
             height: 0,
           },
         });
-        entitiesRef.current.push(radiusEntity);
+        entitiesRef.current.push(ring);
 
-        // Add candidate markers
+        // --- Confidence radius circle ---
+        const confidenceRadius =
+          result.confidence.coordinates > 0.7
+            ? 500
+            : result.confidence.coordinates > 0.4
+              ? 2000
+              : 5000;
+
+        const radiusCircle = viewer.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(target.longitude, target.latitude),
+          ellipse: {
+            semiMajorAxis: confidenceRadius,
+            semiMinorAxis: confidenceRadius,
+            material: Cesium.Color.fromCssColorString('#10b981').withAlpha(0.1),
+            outline: true,
+            outlineColor: Cesium.Color.fromCssColorString('#10b981').withAlpha(0.35),
+            height: 0,
+          },
+        });
+        entitiesRef.current.push(radiusCircle);
+
+        // --- Alternative candidate markers (amber) ---
         result.candidates
           .filter(
             (c) =>
-              !(c.latitude === target.latitude && c.longitude === target.longitude)
+              !(
+                Math.abs(c.latitude - target.latitude) < 0.001 &&
+                Math.abs(c.longitude - target.longitude) < 0.001
+              )
           )
           .slice(0, 5)
           .forEach((candidate: CandidateLocation) => {
             const cMarker = viewer.entities.add({
-              position: Cesium.Cartesian3.fromDegrees(
-                candidate.longitude,
-                candidate.latitude
-              ),
+              position: Cesium.Cartesian3.fromDegrees(candidate.longitude, candidate.latitude),
               point: {
                 pixelSize: 8,
                 color: Cesium.Color.fromCssColorString('#f59e0b').withAlpha(
-                  candidate.confidence
+                  Math.max(0.3, candidate.confidence)
                 ),
                 outlineColor: Cesium.Color.fromCssColorString('#f59e0b'),
                 outlineWidth: 1,
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
               },
               label: {
                 text: candidate.city || candidate.region,
@@ -281,17 +298,11 @@ export default function CesiumGlobe({ onReady }: CesiumGlobeProps) {
     });
   }, [result, selectedCandidate, setCameraFlying, setShowResults]);
 
-  // Handle candidate selection
+  // Fly to alternative candidate on click
   useEffect(() => {
     if (!selectedCandidate || !viewerRef.current || !result) return;
-    const viewer = viewerRef.current;
-
-    viewer.camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(
-        selectedCandidate.longitude,
-        selectedCandidate.latitude,
-        3000
-      ),
+    viewerRef.current.camera.flyTo({
+      destination: Cesium.Cartesian3.fromDegrees(selectedCandidate.longitude, selectedCandidate.latitude, 3000),
       orientation: {
         heading: Cesium.Math.toRadians(0),
         pitch: Cesium.Math.toRadians(-45),
