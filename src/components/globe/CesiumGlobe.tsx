@@ -59,20 +59,6 @@ export default function CesiumGlobe({ onReady }: CesiumGlobeProps) {
     scene.sun = new Cesium.Sun();
     scene.moon = new Cesium.Moon();
 
-    try {
-      const cdn = 'https://cesium.com/downloads/cesiumjs/releases/1.124/Build/Cesium/SkyBox/';
-      scene.skyBox = new Cesium.SkyBox({
-        sources: {
-          positiveX: cdn + 'tycho2t3_80_px.jpg',
-          negativeX: cdn + 'tycho2t3_80_mx.jpg',
-          positiveY: cdn + 'tycho2t3_80_py.jpg',
-          negativeY: cdn + 'tycho2t3_80_my.jpg',
-          positiveZ: cdn + 'tycho2t3_80_pz.jpg',
-          negativeZ: cdn + 'tycho2t3_80_mz.jpg',
-        },
-      });
-    } catch {}
-
     scene.skyAtmosphere = new Cesium.SkyAtmosphere();
     scene.skyAtmosphere.hueShift = -0.05;
     scene.skyAtmosphere.saturationShift = -0.3;
