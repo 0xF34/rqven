@@ -6,26 +6,25 @@ export interface InvestigationStage {
   id: string;
   label: string;
   status: 'pending' | 'active' | 'complete' | 'error';
- detail?: string;
- timestamp?: number;
+  detail?: string;
+  timestamp?: number;
 }
 
 export interface EXIFData {
   gps?: {
     latitude: number;
     longitude: number;
-    altitude?: number;
-    direction?: number;
+    altitude?: number | null;
+    direction?: number | null;
   };
-  timestamp?: string;
-  camera?: string;
-  make?: string;
-  model?: string;
-  focalLength?: number;
-  exposureTime?: number;
-  iso?: number;
-  orientation?: number;
-  software?: string;
+  timestamp?: string | null;
+  camera?: string | null;
+  make?: string | null;
+  focalLength?: number | null;
+  exposureTime?: number | null;
+  iso?: number | null;
+  orientation?: number | null;
+  software?: string | null;
 }
 
 export interface OCRResult {
@@ -70,7 +69,6 @@ export interface WeatherAnalysis {
 export interface MathematicalAnalysis {
   estimatedBuildingHeight?: { value: number; unit: string; method: string };
   estimatedRoadWidth?: { value: number; unit: string; method: string };
-  estimatedDistanceBetweenBuildings?: { value: number; unit: string; method: string };
   viewingAngle?: { value: number; unit: string; method: string };
   cameraElevation?: { value: number; unit: string; method: string };
   focalLength?: { value: number; unit: string; method: string };
@@ -94,7 +92,7 @@ export interface CandidateLocation {
   country: string;
   region: string;
   city: string;
-  neighborhood?: string;
+  neighborhood?: string | null;
   confidence: number;
   reasons: string[];
 }
@@ -111,7 +109,7 @@ export interface LocationEstimate {
   country: string;
   region: string;
   city: string;
-  neighborhood?: string;
+  neighborhood?: string | null;
   latitude: number;
   longitude: number;
 }
@@ -134,15 +132,4 @@ export interface InvestigationResult {
   estimatedSeason?: string;
 }
 
-export interface AnalysisProgressEvent {
-  stage: InvestigationStage;
-  partialResult?: Partial<InvestigationResult>;
-}
-
-export type AnalysisStatus =
-  | 'idle'
-  | 'uploading'
-  | 'analyzing'
-  | 'flying'
-  | 'complete'
-  | 'error';
+export type AnalysisStatus = 'idle' | 'uploading' | 'analyzing' | 'flying' | 'complete' | 'error';
