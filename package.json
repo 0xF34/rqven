@@ -12,8 +12,6 @@
     "next": "15.3.3",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "cesium": "1.124.0",
-    "@zip.js/zip.js": "2.0.3",
     "framer-motion": "11.18.2",
     "lucide-react": "0.469.0",
     "clsx": "2.1.1",
