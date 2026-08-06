@@ -14,14 +14,8 @@ const nextConfig = {
       };
     }
 
-    // Fix Cesium's zip.js import
-    config.resolve.alias = {
-      ...config.resolve.alias,
-      '@zip.js/zip.js': path.resolve(
-        __dirname,
-        'node_modules/@zip.js/zip.js/dist/zip-no-worker.min.js'
-      ),
-    };
+    // Bypass @zip.js/zip.js strict exports field — Cesium needs the old subpath
+    config.resolve.exportsFields = [];
 
     return config;
   },
